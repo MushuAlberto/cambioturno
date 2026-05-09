@@ -46,8 +46,21 @@ export const DashboardEngine: React.FC = () => {
     }
   };
 
+  // Traductor de fechas en español (ej: 04-may-2026)
+  const parseSpanishDate = (str: string) => {
+    const months: Record<string, string> = {
+      'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr', 'may': 'May', 'jun': 'Jun',
+      'jul': 'Jul', 'ago': 'Aug', 'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec'
+    };
+    let cleaned = str.toLowerCase();
+    Object.keys(months).forEach(m => {
+      cleaned = cleaned.replace(m, months[m]);
+    });
+    return new Date(cleaned);
+  };
+
   const parseTime = (val: any) => {
-    if (val === 'S/D') return 0; // Convertir S/D a 0 horas
+    if (val === 'S/D' || val === 'S/d') return 0;
     if (val === null || val === undefined || val === '') return null;
     if (typeof val === 'number') return val * 24; 
     if (typeof val === 'string' && val.includes(':')) {
@@ -69,27 +82,30 @@ export const DashboardEngine: React.FC = () => {
     if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
 
     const filtered = lastReport.excel_data.filter((row: any) => {
-      const prodName = String(row['AF'] || '').trim();
-      if (!prodName || prodName === 'Producto') return false;
+      const prodName = String(row['AF'] || '').trim().toUpperCase();
+      if (!prodName || prodName === 'PRODUCTO') return false;
 
-      const isCorrectProduct = products.some(p => p.toLowerCase() === prodName.toLowerCase());
+      const isCorrectProduct = products.some(p => p.toUpperCase() === prodName);
       if (!isCorrectProduct) return false;
 
       if (startDate || endDate) {
         const rawDate = row['B'];
         let rowDate: Date;
+        
         if (typeof rawDate === 'number') {
           rowDate = new Date((rawDate - 25569) * 86400 * 1000);
+        } else if (typeof rawDate === 'string') {
+          rowDate = parseSpanishDate(rawDate);
         } else {
           rowDate = new Date(rawDate);
         }
 
-        if (isNaN(rowDate.getTime())) return true; // Si no hay fecha, lo dejamos pasar para no ser tan estrictos
-
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-        if (start && rowDate < start) return false;
-        if (end && rowDate > end) return false;
+        if (!isNaN(rowDate.getTime())) {
+          const start = startDate ? new Date(startDate + 'T00:00:00') : null;
+          const end = endDate ? new Date(endDate + 'T23:59:59') : null;
+          if (start && rowDate < start) return false;
+          if (end && rowDate > end) return false;
+        }
       }
       return true;
     });
@@ -125,8 +141,7 @@ export const DashboardEngine: React.FC = () => {
       }
     });
 
-    // Solo devolver productos que aparecieron en el filtro
-    return Object.values(grouped).map((g: any) => {
+    const result = Object.values(grouped).map((g: any) => {
       const avgMeta = g.metaCount > 0 ? g.metaHrsTotal / g.metaCount : 0;
       const avgReal = g.realCount > 0 ? g.realHrsTotal / g.realCount : 0;
       
@@ -140,13 +155,16 @@ export const DashboardEngine: React.FC = () => {
         realHrsLabel: formatToTime(avgReal)
       };
     });
+
+    console.log(`Processed Data for ${products[0]}...:`, result);
+    return result;
   };
 
   const novandinoData = useMemo(() => processData(NOVANDINO_PRODUCTS), [lastReport, startDate, endDate]);
   const sqmData = useMemo(() => processData(SQM_NY_PRODUCTS), [lastReport, startDate, endDate]);
 
   const ProductChart = ({ title, data }: { title: string, data: any[] }) => {
-    if (data.length === 0) return null; // No mostrar gráfico si no hay productos
+    if (data.length === 0) return null;
 
     return (
       <div className="glass-card" style={{ marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '2rem' }}>
@@ -206,6 +224,7 @@ export const DashboardEngine: React.FC = () => {
           <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
           <span style={{ opacity: 0.5 }}>al</span>
           <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
+          {(startDate || endDate) && <button onClick={() => {setStartDate(''); setEndDate('');}} style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', fontSize: '0.8rem' }}>Limpiar Filtros</button>}
         </div>
       </div>
 
@@ -216,7 +235,7 @@ export const DashboardEngine: React.FC = () => {
         <div className="glass-card" style={{ textAlign: 'center', padding: '5rem', opacity: 0.5 }}>
           <AlertCircle size={48} style={{ margin: '0 auto 1rem', display: 'block' }} />
           <p>No se encontraron datos para los productos seleccionados en estas fechas.</p>
-          <p style={{ fontSize: '0.8rem' }}>Asegúrate de que la columna AF tenga los nombres de productos correctos.</p>
+          <p style={{ fontSize: '0.8rem' }}>Asegúrate de subir un nuevo reporte con el archivo Excel para activar el nuevo motor de búsqueda.</p>
         </div>
       )}
     </div>

@@ -58,10 +58,14 @@ export const ShiftForm: React.FC = () => {
       for (const file of images) {
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
-        const { data, error } = await supabase.storage
+        const { data, error: uploadError } = await supabase.storage
           .from('shift-images')
           .upload(fileName, file);
         
+        if (uploadError) {
+          throw new Error(`Error al subir imagen: ${uploadError.message}`);
+        }
+
         if (data) {
           const { data: publicUrl } = supabase.storage.from('shift-images').getPublicUrl(data.path);
           imageUrls.push(publicUrl.publicUrl);
@@ -69,7 +73,7 @@ export const ShiftForm: React.FC = () => {
       }
 
       // 2. Guardar reporte en base de datos
-      const { error } = await supabase.from('shift_reports').insert([
+      const { error: dbError } = await supabase.from('shift_reports').insert([
         {
           supervisor_name: supervisor,
           observations: observations,
@@ -79,7 +83,9 @@ export const ShiftForm: React.FC = () => {
         }
       ]);
 
-      if (error) throw error;
+      if (dbError) {
+        throw new Error(`Error en Base de Datos: ${dbError.message}`);
+      }
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 5000);
@@ -90,9 +96,9 @@ export const ShiftForm: React.FC = () => {
       setExcelData(null);
       setSupervisor('');
       setObservations('');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error submitting report:', err);
-      alert('Hubo un error al enviar el reporte. Verifica la conexión con Supabase.');
+      alert(`ERROR DETALLADO: ${err.message || 'Error desconocido'}`);
     } finally {
       setLoading(false);
     }

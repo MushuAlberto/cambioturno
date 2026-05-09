@@ -62,9 +62,7 @@ export const ShiftForm: React.FC = () => {
           .from('shift-images')
           .upload(fileName, file);
         
-        if (uploadError) {
-          throw new Error(`Error al subir imagen: ${uploadError.message}`);
-        }
+        if (uploadError) throw uploadError;
 
         if (data) {
           const { data: publicUrl } = supabase.storage.from('shift-images').getPublicUrl(data.path);
@@ -83,9 +81,7 @@ export const ShiftForm: React.FC = () => {
         }
       ]);
 
-      if (dbError) {
-        throw new Error(`Error en Base de Datos: ${dbError.message}`);
-      }
+      if (dbError) throw dbError;
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 5000);
@@ -98,7 +94,7 @@ export const ShiftForm: React.FC = () => {
       setObservations('');
     } catch (err: any) {
       console.error('Error submitting report:', err);
-      alert(`ERROR DETALLADO: ${err.message || 'Error desconocido'}`);
+      alert('Hubo un error al enviar el reporte. Por favor, verifica tu conexión o el formato del archivo.');
     } finally {
       setLoading(false);
     }

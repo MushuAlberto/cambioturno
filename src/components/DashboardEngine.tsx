@@ -3,7 +3,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Legend, LabelList
 } from 'recharts';
-import { LayoutDashboard, Filter, RefreshCcw, Package, AlertCircle, Search } from 'lucide-react';
+import { LayoutDashboard, Filter, RefreshCcw, Package, AlertCircle, Search, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const NOVANDINO_PRODUCTS = ['BISCHOFITA', 'LSI (S)', 'SAL 27/15', 'SLIT'];
@@ -210,8 +210,44 @@ export const DashboardEngine: React.FC = () => {
         </div>
       </div>
 
-      <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />
-      <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />
+      {novandinoData.length > 0 && <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />}
+      {sqmData.length > 0 && <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />}
+
+      {/* Bitácora de Novedades */}
+      <div className="glass-card animate-in" style={{ marginTop: '2rem', borderTop: '4px solid var(--accent)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          <FileText color="var(--accent)" />
+          <h3 style={{ margin: 0 }}>Novedades e informaciones</h3>
+        </div>
+        <textarea 
+          className="input-field" 
+          rows={6} 
+          placeholder="Escribe aquí las novedades detectadas en el dashboard..."
+          value={lastReport.observations || ''}
+          onChange={async (e) => {
+            const newObs = e.target.value;
+            setLastReport({ ...lastReport, observations: newObs });
+            // Guardado automático (debounced o manual)
+          }}
+        />
+        <div style={{ marginTop: '1rem', textAlign: 'right' }}>
+          <button 
+            className="btn-primary" 
+            style={{ fontSize: '0.8rem', padding: '8px 20px' }}
+            onClick={async () => {
+              const { error } = await supabase
+                .from('shift_reports')
+                .update({ observations: lastReport.observations })
+                .eq('id', lastReport.id);
+              
+              if (error) alert('Error al guardar: ' + error.message);
+              else alert('Novedades actualizadas correctamente ✓');
+            }}
+          >
+            Actualizar Novedades
+          </button>
+        </div>
+      </div>
 
       {(novandinoData.length === 0 && sqmData.length === 0) && (
         <div className="glass-card" style={{ padding: '3rem', textAlign: 'center' }}>

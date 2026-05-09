@@ -199,6 +199,16 @@ export const DashboardEngine: React.FC = () => {
 
   if (loading) return <div style={{ textAlign: 'center', padding: '5rem' }}><RefreshCcw className="animate-spin" /></div>;
 
+  if (!lastReport) {
+    return (
+      <div className="glass-card animate-in" style={{ textAlign: 'center', padding: '5rem', opacity: 0.5 }}>
+        <AlertCircle size={48} style={{ margin: '0 auto 1rem', display: 'block' }} />
+        <h3>Aún no hay reportes publicados</h3>
+        <p>Ve a la pestaña "Cambio de Turno" para subir tu primer archivo Excel.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-in">
       <div className="glass-card" style={{ marginBottom: '2rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -237,11 +247,10 @@ export const DashboardEngine: React.FC = () => {
           className="input-field" 
           rows={6} 
           placeholder="Escribe aquí las novedades detectadas en el dashboard..."
-          value={lastReport.observations || ''}
-          onChange={async (e) => {
+          value={lastReport?.observations || ''}
+          onChange={(e) => {
             const newObs = e.target.value;
             setLastReport({ ...lastReport, observations: newObs });
-            // Guardado automático (debounced o manual)
           }}
         />
         <div style={{ marginTop: '1rem', textAlign: 'right' }}>
@@ -249,6 +258,7 @@ export const DashboardEngine: React.FC = () => {
             className="btn-primary" 
             style={{ fontSize: '0.8rem', padding: '8px 20px' }}
             onClick={async () => {
+              if (!lastReport?.id) return;
               const { error } = await supabase
                 .from('shift_reports')
                 .update({ observations: lastReport.observations })

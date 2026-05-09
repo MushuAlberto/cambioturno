@@ -9,14 +9,14 @@ if (supabaseUrl && !supabaseUrl.startsWith('http')) {
   supabaseUrl = `https://${supabaseUrl}`
 }
 
-console.log('--- ShiftFlow Connection Status ---');
-console.log('URL Base:', supabaseUrl ? 'Detectada' : 'No detectada');
-console.log('Protocolo OK:', supabaseUrl.startsWith('https://'));
-console.log('----------------------------------');
-
-// Usamos una URL válida por defecto para evitar que el SDK de Supabase crashee la app
+// Fallback si no hay nada en Vercel
 const finalUrl = supabaseUrl && supabaseUrl.startsWith('http') 
   ? supabaseUrl 
-  : 'https://hjmxciqgzwycrhhlmpzw.supabase.co'; // Tu URL real como respaldo
+  : 'https://hjmxciqgzwycrhhlmpzw.supabase.co';
+
+console.log('--- ShiftFlow Debug ---');
+console.log('URL Final usada:', finalUrl);
+console.log('Anon Key presente:', !!supabaseAnonKey);
+console.log('-----------------------');
 
 export const supabase = createClient(finalUrl, supabaseAnonKey || 'placeholder')

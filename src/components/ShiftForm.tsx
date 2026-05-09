@@ -32,7 +32,15 @@ export const ShiftForm: React.FC = () => {
     reader.onload = (evt) => {
       const bstr = evt.target?.result;
       const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
+      
+      // Buscar específicamente la pestaña "Base de Datos"
+      const wsname = wb.SheetNames.find(n => n === 'Base de Datos');
+      if (!wsname) {
+        alert('Error: No se encontró la pestaña "Base de Datos" en el archivo Excel.');
+        setLoading(false);
+        return;
+      }
+      
       const ws = wb.Sheets[wsname];
       const jsonData = XLSX.utils.sheet_to_json(ws);
       setExcelData(jsonData);

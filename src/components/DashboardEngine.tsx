@@ -46,13 +46,23 @@ export const DashboardEngine: React.FC = () => {
     }
   };
 
-  // Traductor de fechas en español (ej: 04-may-2026)
-  const parseSpanishDate = (str: string) => {
+  // Limpia strings para comparación (quita guiones, espacios y tildes)
+  const normalize = (str: string) => {
+    return str.toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quitar tildes
+      .replace(/[^a-z0-9]/g, ""); // Quitar todo lo que no sea letra o número
+  };
+
+  const parseSpanishDate = (val: any) => {
+    if (typeof val === 'number') return new Date((val - 25569) * 86400 * 1000);
+    if (typeof val !== 'string') return new Date(val);
+
     const months: Record<string, string> = {
       'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr', 'may': 'May', 'jun': 'Jun',
       'jul': 'Jul', 'ago': 'Aug', 'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec'
     };
-    let cleaned = str.toLowerCase();
+    
+    let cleaned = val.toLowerCase().replace(/-/g, ' ');
     Object.keys(months).forEach(m => {
       cleaned = cleaned.replace(m, months[m]);
     });
@@ -60,7 +70,7 @@ export const DashboardEngine: React.FC = () => {
   };
 
   const parseTime = (val: any) => {
-    if (val === 'S/D' || val === 'S/d') return 0;
+    if (val === 'S/D' || val === 'S/d' || val === 's/d') return 0;
     if (val === null || val === undefined || val === '') return null;
     if (typeof val === 'number') return val * 24; 
     if (typeof val === 'string' && val.includes(':')) {
@@ -81,25 +91,18 @@ export const DashboardEngine: React.FC = () => {
   const processData = (products: string[]) => {
     if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
 
-    const filtered = lastReport.excel_data.filter((row: any) => {
-      const prodName = String(row['AF'] || '').trim().toUpperCase();
-      if (!prodName || prodName === 'PRODUCTO') return false;
+    const normalizedTargetProducts = products.map(p => normalize(p));
 
-      const isCorrectProduct = products.some(p => p.toUpperCase() === prodName);
+    const filtered = lastReport.excel_data.filter((row: any) => {
+      const rawName = String(row['AF'] || '').trim();
+      if (!rawName || rawName.toLowerCase() === 'producto') return false;
+
+      const normName = normalize(rawName);
+      const isCorrectProduct = normalizedTargetProducts.includes(normName);
       if (!isCorrectProduct) return false;
 
       if (startDate || endDate) {
-        const rawDate = row['B'];
-        let rowDate: Date;
-        
-        if (typeof rawDate === 'number') {
-          rowDate = new Date((rawDate - 25569) * 86400 * 1000);
-        } else if (typeof rawDate === 'string') {
-          rowDate = parseSpanishDate(rawDate);
-        } else {
-          rowDate = new Date(rawDate);
-        }
-
+        const rowDate = parseSpanishDate(row['B']);
         if (!isNaN(rowDate.getTime())) {
           const start = startDate ? new Date(startDate + 'T00:00:00') : null;
           const end = endDate ? new Date(endDate + 'T23:59:59') : null;
@@ -112,10 +115,11 @@ export const DashboardEngine: React.FC = () => {
 
     const grouped: Record<string, any> = {};
     filtered.forEach((row: any) => {
-      const name = String(row['AF'] || '').trim().toUpperCase();
-      if (!grouped[name]) {
-        grouped[name] = { 
-          name, 
+      // Usamos el nombre que viene en el Excel para mostrarlo en el gráfico
+      const displayName = String(row['AF'] || '').trim().toUpperCase();
+      if (!grouped[displayName]) {
+        grouped[displayName] = { 
+          name: displayName, 
           progTon: 0, 
           realTon: 0, 
           metaHrsTotal: 0, 
@@ -125,23 +129,23 @@ export const DashboardEngine: React.FC = () => {
         };
       }
       
-      grouped[name].progTon += parseFloat(row['AH']) || 0;
-      grouped[name].realTon += parseFloat(row['AI']) || 0;
+      grouped[displayName].progTon += parseFloat(row['AH']) || 0;
+      grouped[displayName].realTon += parseFloat(row['AI']) || 0;
       
       const mHrs = parseTime(row['AX']);
       if (mHrs !== null) {
-        grouped[name].metaHrsTotal += mHrs;
-        grouped[name].metaCount += 1;
+        grouped[displayName].metaHrsTotal += mHrs;
+        grouped[displayName].metaCount += 1;
       }
       
       const rHrs = parseTime(row['AY']);
       if (rHrs !== null) {
-        grouped[name].realHrsTotal += rHrs;
-        grouped[name].realCount += 1;
+        grouped[displayName].realHrsTotal += rHrs;
+        grouped[displayName].realCount += 1;
       }
     });
 
-    const result = Object.values(grouped).map((g: any) => {
+    return Object.values(grouped).map((g: any) => {
       const avgMeta = g.metaCount > 0 ? g.metaHrsTotal / g.metaCount : 0;
       const avgReal = g.realCount > 0 ? g.realHrsTotal / g.realCount : 0;
       
@@ -155,9 +159,6 @@ export const DashboardEngine: React.FC = () => {
         realHrsLabel: formatToTime(avgReal)
       };
     });
-
-    console.log(`Processed Data for ${products[0]}...:`, result);
-    return result;
   };
 
   const novandinoData = useMemo(() => processData(NOVANDINO_PRODUCTS), [lastReport, startDate, endDate]);
@@ -214,7 +215,6 @@ export const DashboardEngine: React.FC = () => {
 
   return (
     <div className="animate-in">
-      {/* Filtros */}
       <div className="glass-card" style={{ marginBottom: '2rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <Filter size={18} color="var(--accent)" />
@@ -224,7 +224,7 @@ export const DashboardEngine: React.FC = () => {
           <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
           <span style={{ opacity: 0.5 }}>al</span>
           <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
-          {(startDate || endDate) && <button onClick={() => {setStartDate(''); setEndDate('');}} style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', fontSize: '0.8rem' }}>Limpiar Filtros</button>}
+          {(startDate || endDate) && <button onClick={() => {setStartDate(''); setEndDate('');}} style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', fontSize: '0.8rem' }}>Limpiar</button>}
         </div>
       </div>
 
@@ -235,7 +235,7 @@ export const DashboardEngine: React.FC = () => {
         <div className="glass-card" style={{ textAlign: 'center', padding: '5rem', opacity: 0.5 }}>
           <AlertCircle size={48} style={{ margin: '0 auto 1rem', display: 'block' }} />
           <p>No se encontraron datos para los productos seleccionados en estas fechas.</p>
-          <p style={{ fontSize: '0.8rem' }}>Asegúrate de subir un nuevo reporte con el archivo Excel para activar el nuevo motor de búsqueda.</p>
+          <p style={{ fontSize: '0.8rem' }}>Hemos activado el filtro flexible para ignorar guiones y espacios. Prueba subiendo el archivo de nuevo.</p>
         </div>
       )}
     </div>

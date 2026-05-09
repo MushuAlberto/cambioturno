@@ -1,87 +1,103 @@
-import React, { useState } from 'react';
-import * as XLSX from 'xlsx';
+import React, { useEffect, useState } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  LineChart, Line, PieChart, Pie, Cell 
+  LineChart, Line 
 } from 'recharts';
-import { FileSpreadsheet, TrendingUp, AlertCircle, LayoutDashboard } from 'lucide-react';
-
-interface DataPoint {
-  [key: string]: any;
-}
+import { LayoutDashboard, Clock, User, MessageSquare, Image as ImageIcon } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export const DashboardEngine: React.FC = () => {
-  const [data, setData] = useState<DataPoint[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [lastReport, setLastReport] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  useEffect(() => {
+    fetchLatestReport();
+  }, []);
 
+  const fetchLatestReport = async () => {
     setLoading(true);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const jsonData = XLSX.utils.sheet_to_json(ws);
-      setData(jsonData as DataPoint[]);
-      setLoading(false);
-    };
-    reader.readAsBinaryString(file);
+    const { data, error } = await supabase
+      .from('shift_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (data) {
+      setLastReport(data);
+    }
+    setLoading(false);
   };
 
-  const COLORS = ['#38bdf8', '#818cf8', '#fb7185', '#34d399', '#fbbf24'];
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
+        <LayoutDashboard size={64} className="animate-spin" style={{ marginBottom: '1rem' }} />
+        <p>Cargando último reporte publicado...</p>
+      </div>
+    );
+  }
+
+  if (!lastReport) {
+    return (
+      <div className="glass-card" style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
+        <LayoutDashboard size={64} style={{ marginBottom: '1rem' }} />
+        <p>Aún no hay reportes publicados. El supervisor debe enviar el primer cambio de turno.</p>
+      </div>
+    );
+  }
+
+  const data = lastReport.excel_data || [];
 
   return (
-    <div className="glass-card animate-in" style={{ animationDelay: '0.2s' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <div>
-          <h2>📊 Dashboard Engine</h2>
-          <p style={{ opacity: 0.7 }}>Carga un archivo Excel para generar visualizaciones automáticas.</p>
+    <div className="animate-in">
+      {/* Resumen del Último Reporte */}
+      <div className="glass-card" style={{ marginBottom: '2rem', borderLeft: '4px solid var(--accent)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Reporte Actual: {lastReport.supervisor_name}</h2>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Clock size={14} /> {new Date(lastReport.created_at).toLocaleString()}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <MessageSquare size={14} /> Observaciones incluidas
+              </span>
+            </div>
+          </div>
+          {lastReport.image_urls?.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {lastReport.image_urls.map((url: string, i: number) => (
+                <a key={i} href={url} target="_blank" rel="noreferrer">
+                  <img src={url} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--glass-border)' }} />
+                </a>
+              ))}
+            </div>
+          )}
         </div>
-        <button 
-          className="btn-primary" 
-          onClick={() => document.getElementById('excel-upload')?.click()}
-        >
-          <FileSpreadsheet size={18} /> Cargar Excel
-        </button>
-        <input 
-          id="excel-upload" 
-          type="file" 
-          accept=".xlsx, .xls" 
-          hidden 
-          onChange={handleFileUpload}
-        />
+        <p style={{ marginTop: '1rem', fontStyle: 'italic', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '0.5rem' }}>
+          "{lastReport.observations}"
+        </p>
       </div>
 
-      {data.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
-          <LayoutDashboard size={64} style={{ marginBottom: '1rem' }} />
-          <p>No hay datos cargados aún. Sube un archivo Excel para comenzar.</p>
-        </div>
-      ) : (
+      {/* Visualización de Datos del Excel Publicado */}
+      {data.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-          {/* Gráfico de Barras - Asumimos columnas numéricas */}
           <div className="glass-card" style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Producción por Categoría</h3>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Producción por Categoría (Excel)</h3>
             <div style={{ height: '300px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.slice(0, 10)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
                   <XAxis dataKey={Object.keys(data[0])[0]} stroke="#718096" />
                   <YAxis stroke="#718096" />
-                  <Tooltip 
-                    contentStyle={{ background: '#1e293b', border: '1px solid var(--glass-border)', borderRadius: '8px' }}
-                  />
+                  <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid var(--glass-border)', borderRadius: '8px' }} />
                   <Bar dataKey={Object.keys(data[0])[1]} fill="var(--accent)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Gráfico de Líneas - Tendencia */}
           <div className="glass-card" style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem' }}>
             <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Tendencia de Desempeño</h3>
             <div style={{ height: '300px' }}>
@@ -90,30 +106,16 @@ export const DashboardEngine: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
                   <XAxis dataKey={Object.keys(data[0])[0]} stroke="#718096" />
                   <YAxis stroke="#718096" />
-                  <Tooltip 
-                    contentStyle={{ background: '#1e293b', border: '1px solid var(--glass-border)', borderRadius: '8px' }}
-                  />
+                  <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid var(--glass-border)', borderRadius: '8px' }} />
                   <Line type="monotone" dataKey={Object.keys(data[0])[1]} stroke="#818cf8" strokeWidth={3} dot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* KPIs Rápidos */}
-          <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-            <div className="glass-card" style={{ textAlign: 'center', padding: '1rem' }}>
-              <p style={{ fontSize: '0.8rem', opacity: 0.7 }}>Total Registros</p>
-              <h4 style={{ fontSize: '2rem', margin: 0 }}>{data.length}</h4>
-            </div>
-            <div className="glass-card" style={{ textAlign: 'center', padding: '1rem' }}>
-              <p style={{ fontSize: '0.8rem', opacity: 0.7 }}>Promedio</p>
-              <h4 style={{ fontSize: '2rem', margin: 0, color: '#34d399' }}>84.2%</h4>
-            </div>
-            <div className="glass-card" style={{ textAlign: 'center', padding: '1rem' }}>
-              <p style={{ fontSize: '0.8rem', opacity: 0.7 }}>Incidencias</p>
-              <h4 style={{ fontSize: '2rem', margin: 0, color: '#fb7185' }}>3</h4>
-            </div>
-          </div>
+        </div>
+      ) : (
+        <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>
+          <p>El último reporte no incluyó datos de Excel procesables.</p>
         </div>
       )}
     </div>

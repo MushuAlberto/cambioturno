@@ -204,9 +204,23 @@ export const DashboardEngine: React.FC = () => {
       <div className="glass-card" style={{ marginBottom: '2rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <Filter size={18} color="var(--accent)" />
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <input 
+            type="date" 
+            className="input-field" 
+            style={{ width: 'auto' }} 
+            value={startDate} 
+            onChange={e => setStartDate(e.target.value)} 
+            onClick={(e) => (e.target as any).showPicker?.()}
+          />
           <span style={{ opacity: 0.5 }}>al</span>
-          <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
+          <input 
+            type="date" 
+            className="input-field" 
+            style={{ width: 'auto' }} 
+            value={endDate} 
+            onChange={e => setEndDate(e.target.value)} 
+            onClick={(e) => (e.target as any).showPicker?.()}
+          />
         </div>
       </div>
 

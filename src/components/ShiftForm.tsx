@@ -210,7 +210,13 @@ export const ShiftForm: React.FC = () => {
             </div>
             <div>
               <label className="label-text"><Calendar size={14} /> Fecha del Turno</label>
-              <input type="date" className="input-field" value={shiftDate} onChange={e => setShiftDate(e.target.value)} />
+              <input 
+                type="date" 
+                className="input-field" 
+                value={shiftDate} 
+                onChange={e => setShiftDate(e.target.value)} 
+                onClick={(e) => (e.target as any).showPicker?.()}
+              />
             </div>
 
             <div>
@@ -225,8 +231,20 @@ export const ShiftForm: React.FC = () => {
             <div>
               <label className="label-text"><BarChart3 size={14} /> Rango para Gráficos</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <input type="date" className="input-field" value={chartStartDate} onChange={e => setChartStartDate(e.target.value)} />
-                <input type="date" className="input-field" value={chartEndDate} onChange={e => setChartEndDate(e.target.value)} />
+                <input 
+                  type="date" 
+                  className="input-field" 
+                  value={chartStartDate} 
+                  onChange={e => setChartStartDate(e.target.value)} 
+                  onClick={(e) => (e.target as any).showPicker?.()}
+                />
+                <input 
+                  type="date" 
+                  className="input-field" 
+                  value={chartEndDate} 
+                  onChange={e => setChartEndDate(e.target.value)} 
+                  onClick={(e) => (e.target as any).showPicker?.()}
+                />
               </div>
             </div>
 

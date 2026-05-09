@@ -3,7 +3,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Legend, LabelList
 } from 'recharts';
-import { LayoutDashboard, Filter, RefreshCcw, Package, AlertCircle, Search, FileText } from 'lucide-react';
+import { LayoutDashboard, Filter, RefreshCcw, Package, AlertCircle, Search, FileText, Database } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const NOVANDINO_PRODUCTS = ['BISCHOFITA', 'LSI (S)', 'SAL 27/15', 'SLIT'];
@@ -18,6 +18,7 @@ export const DashboardEngine: React.FC = () => {
   const [lastReport, setLastReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
   
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -38,9 +39,18 @@ export const DashboardEngine: React.FC = () => {
         .maybeSingle();
 
       if (sbError) throw sbError;
-      setLastReport(data);
+      if (!data) {
+        setLastReport(null);
+      } else {
+        // Asegurarse de que excel_data sea un array
+        const processedData = typeof data.excel_data === 'string' 
+          ? JSON.parse(data.excel_data) 
+          : data.excel_data;
+        setLastReport({ ...data, excel_data: processedData });
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Fetch Error:', err);
+      setError('Error al cargar datos: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -48,37 +58,30 @@ export const DashboardEngine: React.FC = () => {
 
   const normalize = (str: string) => {
     if (!str) return '';
-    return String(str).toLowerCase()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]/g, "");
+    return String(str).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
   };
 
   const parseSpanishDate = (val: any) => {
-    if (typeof val === 'number') return new Date((val - 25569) * 86400 * 1000);
-    if (typeof val !== 'string') return new Date(val);
-
-    const months: Record<string, string> = {
-      'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr', 'may': 'May', 'jun': 'Jun',
-      'jul': 'Jul', 'ago': 'Aug', 'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec'
-    };
-    
-    let cleaned = val.toLowerCase().replace(/-/g, ' ');
-    Object.keys(months).forEach(m => {
-      cleaned = cleaned.replace(m, months[m]);
-    });
-    return new Date(cleaned);
+    try {
+      if (typeof val === 'number') return new Date((val - 25569) * 86400 * 1000);
+      if (typeof val !== 'string') return new Date(val);
+      const months: Record<string, string> = { 'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr', 'may': 'May', 'jun': 'Jun', 'jul': 'Jul', 'ago': 'Aug', 'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec' };
+      let cleaned = val.toLowerCase().replace(/-/g, ' ');
+      Object.keys(months).forEach(m => cleaned = cleaned.replace(m, months[m]));
+      return new Date(cleaned);
+    } catch (e) {
+      return new Date(NaN);
+    }
   };
 
   const parseTime = (val: any) => {
     if (val === 'S/D' || val === 'S/d' || val === 's/d') return 0;
-    if (val === null || val === undefined || val === '') return null;
     if (typeof val === 'number') return val * 24; 
     if (typeof val === 'string' && val.includes(':')) {
       const [h, m] = val.split(':').map(Number);
       return h + (m / 60);
     }
-    const num = parseFloat(val);
-    return isNaN(num) ? null : num;
+    return parseFloat(val) || 0;
   };
 
   const formatToTime = (decimal: number) => {
@@ -89,94 +92,66 @@ export const DashboardEngine: React.FC = () => {
   };
 
   const processData = (products: string[]) => {
-    if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
+    try {
+      if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
+      const normalizedTarget = products.map(p => normalize(p));
 
-    const normalizedTargetProducts = products.map(p => normalize(p));
+      const filtered = lastReport.excel_data.filter((row: any) => {
+        const rawName = row['AF'] || row['Producto'] || row['PRODUCTO'];
+        const normName = normalize(rawName);
+        if (!normName || normName === 'producto') return false;
+        if (!normalizedTarget.includes(normName)) return false;
 
-    const filtered = lastReport.excel_data.filter((row: any) => {
-      // Intentar obtener producto por columna AF o por nombre de columna si el reporte es viejo
-      const rawName = row['AF'] || row['Producto'] || row['PRODUCTO'];
-      if (!rawName) return false;
-
-      const normName = normalize(rawName);
-      if (normName === 'producto') return false;
-
-      const isCorrectProduct = normalizedTargetProducts.includes(normName);
-      if (!isCorrectProduct) return false;
-
-      if (startDate || endDate) {
-        const rawDate = row['B'] || row['Fecha'] || row['FECHA'];
-        const rowDate = parseSpanishDate(rawDate);
-        if (!isNaN(rowDate.getTime())) {
-          const start = startDate ? new Date(startDate + 'T00:00:00') : null;
-          const end = endDate ? new Date(endDate + 'T23:59:59') : null;
-          if (start && rowDate < start) return false;
-          if (end && rowDate > end) return false;
+        if (startDate || endDate) {
+          const rawDate = row['B'] || row['Fecha'] || row['FECHA'];
+          const rowDate = parseSpanishDate(rawDate);
+          if (!isNaN(rowDate.getTime())) {
+            const start = startDate ? new Date(startDate + 'T00:00:00') : null;
+            const end = endDate ? new Date(endDate + 'T23:59:59') : null;
+            if (start && rowDate < start) return false;
+            if (end && rowDate > end) return false;
+          }
         }
-      }
-      return true;
-    });
+        return true;
+      });
 
-    const grouped: Record<string, any> = {};
-    filtered.forEach((row: any) => {
-      const name = String(row['AF'] || row['Producto'] || row['PRODUCTO']).trim().toUpperCase();
-      if (!grouped[name]) {
-        grouped[name] = { name, progTon: 0, realTon: 0, metaHrsTotal: 0, metaCount: 0, realHrsTotal: 0, realCount: 0 };
-      }
-      
-      grouped[name].progTon += parseFloat(row['AH'] || row['Ton (Prog)'] || 0) || 0;
-      grouped[name].realTon += parseFloat(row['AI'] || row['Ton (Real)'] || 0) || 0;
-      
-      const mHrs = parseTime(row['AX'] || row['Tiempo Interior Faena Producto (Meta)']);
-      if (mHrs !== null) {
-        grouped[name].metaHrsTotal += mHrs;
-        grouped[name].metaCount += 1;
-      }
-      
-      const rHrs = parseTime(row['AY'] || row['Tiempo Interior Faena (Real)']);
-      if (rHrs !== null) {
-        grouped[name].realHrsTotal += rHrs;
-        grouped[name].realCount += 1;
-      }
-    });
+      const grouped: any = {};
+      filtered.forEach((row: any) => {
+        const name = String(row['AF'] || row['Producto'] || row['PRODUCTO']).trim().toUpperCase();
+        if (!grouped[name]) grouped[name] = { name, progTon: 0, realTon: 0, mTotal: 0, mCount: 0, rTotal: 0, rCount: 0 };
+        grouped[name].progTon += parseFloat(row['AH'] || row['Ton (Prog)'] || 0) || 0;
+        grouped[name].realTon += parseFloat(row['AI'] || row['Ton (Real)'] || 0) || 0;
+        const m = parseTime(row['AX'] || row['Tiempo Interior Faena Producto (Meta)']);
+        if (m !== null) { grouped[name].mTotal += m; grouped[name].mCount++; }
+        const r = parseTime(row['AY'] || row['Tiempo Interior Faena (Real)']);
+        if (r !== null) { grouped[name].rTotal += r; grouped[name].rCount++; }
+      });
 
-    return Object.values(grouped).map((g: any) => {
-      const avgMeta = g.metaCount > 0 ? g.metaHrsTotal / g.metaCount : 0;
-      const avgReal = g.realCount > 0 ? g.realHrsTotal / g.realCount : 0;
-      return {
+      return Object.values(grouped).map((g: any) => ({
         name: g.name,
         progTon: Math.round(g.progTon),
         realTon: Math.round(g.realTon),
-        metaVal: avgMeta,
-        realVal: avgReal,
-        metaHrsLabel: formatToTime(avgMeta),
-        realHrsLabel: formatToTime(avgReal)
-      };
-    });
+        metaVal: g.mCount > 0 ? g.mTotal / g.mCount : 0,
+        realVal: g.rCount > 0 ? g.rTotal / g.rCount : 0,
+        metaHrsLabel: formatToTime(g.mCount > 0 ? g.mTotal / g.mCount : 0),
+        realHrsLabel: formatToTime(g.rCount > 0 ? g.rTotal / g.rCount : 0)
+      }));
+    } catch (err) {
+      console.error('Process Error:', err);
+      return [];
+    }
   };
 
   const novandinoData = useMemo(() => processData(NOVANDINO_PRODUCTS), [lastReport, startDate, endDate]);
   const sqmData = useMemo(() => processData(SQM_NY_PRODUCTS), [lastReport, startDate, endDate]);
 
-  // Diagnóstico de productos disponibles en el Excel
-  const availableProducts = useMemo(() => {
-    if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
-    const set = new Set<string>();
-    lastReport.excel_data.slice(0, 100).forEach((row: any) => {
-      const name = row['AF'] || row['Producto'] || row['PRODUCTO'];
-      if (name && normalize(name) !== 'producto') set.add(String(name).trim());
-    });
-    return Array.from(set);
-  }, [lastReport]);
-
   const ProductChart = ({ title, data }: { title: string, data: any[] }) => {
     if (data.length === 0) return null;
     return (
-      <div className="glass-card" style={{ marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
-          <Package color="var(--accent)" />
-          <h3 style={{ margin: 0, fontSize: '1.25rem', letterSpacing: '1px' }}>{title}</h3>
-        </div>
+      <div className="glass-card animate-in" style={{ marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '2rem' }}>
+        <h3 style={{ margin: 0, marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Package color="var(--accent)" /> {title}
+        </h3>
         <div style={{ height: '400px', width: '100%' }}>
           <ResponsiveContainer>
             <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
@@ -198,6 +173,7 @@ export const DashboardEngine: React.FC = () => {
   };
 
   if (loading) return <div style={{ textAlign: 'center', padding: '5rem' }}><RefreshCcw className="animate-spin" /></div>;
+  if (error) return <div className="glass-card" style={{ color: '#fb7185', padding: '2rem' }}><AlertCircle /> {error}</div>;
 
   if (!lastReport) {
     return (
@@ -214,28 +190,23 @@ export const DashboardEngine: React.FC = () => {
       <div className="glass-card" style={{ marginBottom: '2rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <Filter size={18} color="var(--accent)" />
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <input 
-            type="date" 
-            className="input-field" 
-            style={{ width: 'auto' }} 
-            value={startDate} 
-            onChange={e => setStartDate(e.target.value)} 
-            onClick={(e) => (e.target as any).showPicker?.()}
-          />
+          <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} onClick={(e) => (e.target as any).showPicker?.()} />
           <span style={{ opacity: 0.5 }}>al</span>
-          <input 
-            type="date" 
-            className="input-field" 
-            style={{ width: 'auto' }} 
-            value={endDate} 
-            onChange={e => setEndDate(e.target.value)} 
-            onClick={(e) => (e.target as any).showPicker?.()}
-          />
+          <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} onClick={(e) => (e.target as any).showPicker?.()} />
         </div>
+        <button onClick={() => setShowRaw(!showRaw)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Database size={14} /> {showRaw ? 'Cerrar Datos' : 'Depurar Datos'}
+        </button>
       </div>
 
-      {novandinoData.length > 0 && <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />}
-      {sqmData.length > 0 && <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />}
+      {showRaw && (
+        <pre style={{ background: '#000', padding: '1rem', borderRadius: '8px', fontSize: '0.7rem', overflow: 'auto', maxHeight: '300px', marginBottom: '2rem' }}>
+          {JSON.stringify(lastReport, null, 2)}
+        </pre>
+      )}
+
+      <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />
+      <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />
 
       {/* Bitácora de Novedades */}
       <div className="glass-card animate-in" style={{ marginTop: '2rem', borderTop: '4px solid var(--accent)' }}>
@@ -248,50 +219,22 @@ export const DashboardEngine: React.FC = () => {
           rows={6} 
           placeholder="Escribe aquí las novedades detectadas en el dashboard..."
           value={lastReport?.observations || ''}
-          onChange={(e) => {
-            const newObs = e.target.value;
-            setLastReport({ ...lastReport, observations: newObs });
-          }}
+          onChange={(e) => setLastReport({ ...lastReport, observations: e.target.value })}
         />
         <div style={{ marginTop: '1rem', textAlign: 'right' }}>
           <button 
             className="btn-primary" 
             style={{ fontSize: '0.8rem', padding: '8px 20px' }}
             onClick={async () => {
-              if (!lastReport?.id) return;
-              const { error } = await supabase
-                .from('shift_reports')
-                .update({ observations: lastReport.observations })
-                .eq('id', lastReport.id);
-              
+              const { error } = await supabase.from('shift_reports').update({ observations: lastReport.observations }).eq('id', lastReport.id);
               if (error) alert('Error al guardar: ' + error.message);
-              else alert('Novedades actualizadas correctamente ✓');
+              else alert('Novedades actualizadas ✓');
             }}
           >
             Actualizar Novedades
           </button>
         </div>
       </div>
-
-      {(novandinoData.length === 0 && sqmData.length === 0) && (
-        <div className="glass-card" style={{ padding: '3rem', textAlign: 'center' }}>
-          <AlertCircle size={48} style={{ margin: '0 auto 1rem', display: 'block', color: '#fb7185' }} />
-          <h3>No hay datos para mostrar</h3>
-          <p style={{ opacity: 0.7, marginBottom: '2rem' }}>No se encontraron coincidencias para los productos en el rango seleccionado.</p>
-          
-          <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '12px', textAlign: 'left' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--accent)' }}>
-              <Search size={16} />
-              <span style={{ fontWeight: '600' }}>Diagnóstico: Productos encontrados en el Excel</span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              {availableProducts.length > 0 ? availableProducts.map((p, i) => (
-                <span key={i} style={{ background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem' }}>{p}</span>
-              )) : <p style={{ fontSize: '0.8rem', opacity: 0.5 }}>No se detectaron nombres de productos en la columna AF.</p>}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

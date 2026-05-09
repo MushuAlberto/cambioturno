@@ -47,7 +47,8 @@ export const DashboardEngine: React.FC = () => {
   };
 
   const parseTime = (val: any) => {
-    if (val === null || val === undefined || val === 'S/D' || val === '') return null;
+    if (val === 'S/D') return 0; // Convertir S/D a 0 horas
+    if (val === null || val === undefined || val === '') return null;
     if (typeof val === 'number') return val * 24; 
     if (typeof val === 'string' && val.includes(':')) {
       const [h, m] = val.split(':').map(Number);

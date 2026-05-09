@@ -1,12 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, Legend, Cell, LabelList
+  ResponsiveContainer, Legend, LabelList
 } from 'recharts';
-import { LayoutDashboard, Clock, Filter, AlertTriangle, RefreshCcw, TrendingUp, Package } from 'lucide-react';
+import { LayoutDashboard, Filter, RefreshCcw, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-// Listas de productos por categoría
 const NOVANDINO_PRODUCTS = ['BISCHOFITA', 'LSI (S)', 'SAL 27/15', 'SLIT'];
 const SQM_NY_PRODUCTS = [
   'MOP 70', 'MOP TALCO', 'MOP TALCO MAXIS', 'MOP-G', 'MOP-G (Rojo)', 
@@ -47,9 +46,8 @@ export const DashboardEngine: React.FC = () => {
     }
   };
 
-  // Función para convertir tiempo de Excel/String a número decimal de horas
   const parseTime = (val: any) => {
-    if (typeof val === 'number') return val * 24; // Excel time
+    if (typeof val === 'number') return val * 24; 
     if (typeof val === 'string' && val.includes(':')) {
       const [h, m] = val.split(':').map(Number);
       return h + (m / 60);
@@ -57,26 +55,33 @@ export const DashboardEngine: React.FC = () => {
     return parseFloat(val) || 0;
   };
 
-  // Función para formatear decimal a HH:MM
   const formatToTime = (decimal: number) => {
+    if (isNaN(decimal) || decimal === 0) return "0:00";
     const h = Math.floor(decimal);
     const m = Math.round((decimal - h) * 60);
     return `${h}:${m.toString().padStart(2, '0')}`;
   };
 
   const processData = (products: string[]) => {
-    if (!lastReport?.excel_data) return [];
+    if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
 
     const filtered = lastReport.excel_data.filter((row: any) => {
-      // B es Fecha (Col index 1), AF es Producto (Col index 31)
-      const keys = Object.keys(row);
-      const prodName = row[keys[31]];
-      const rowDate = new Date(row[keys[1]]);
+      // Uso de letras exactas: B=Fecha, AF=Producto
+      const prodName = String(row['AF'] || '').trim();
+      const rawDate = row['B'];
       
-      const isCorrectProduct = products.includes(prodName);
+      const isCorrectProduct = products.some(p => p.toLowerCase() === prodName.toLowerCase());
       if (!isCorrectProduct) return false;
 
       if (startDate || endDate) {
+        // Manejar fecha de Excel (número) o String
+        let rowDate: Date;
+        if (typeof rawDate === 'number') {
+          rowDate = new Date((rawDate - 25569) * 86400 * 1000);
+        } else {
+          rowDate = new Date(rawDate);
+        }
+
         const start = startDate ? new Date(startDate) : null;
         const end = endDate ? new Date(endDate) : null;
         if (start && rowDate < start) return false;
@@ -85,32 +90,25 @@ export const DashboardEngine: React.FC = () => {
       return true;
     });
 
-    // Agrupar por producto
     const grouped: Record<string, any> = {};
     filtered.forEach((row: any) => {
-      const keys = Object.keys(row);
-      const name = row[keys[31]];
+      const name = String(row['AF'] || '').trim().toUpperCase();
       if (!grouped[name]) {
-        grouped[name] = { 
-          name, 
-          progTon: 0, 
-          realTon: 0, 
-          metaHrs: 0, 
-          realHrs: 0,
-          count: 0 
-        };
+        grouped[name] = { name, progTon: 0, realTon: 0, metaHrs: 0, realHrs: 0, count: 0 };
       }
-      grouped[name].progTon += parseFloat(row[keys[33]]) || 0; // AH
-      grouped[name].realTon += parseFloat(row[keys[34]]) || 0; // AI
-      grouped[name].metaHrs += parseTime(row[keys[49]]); // AX
-      grouped[name].realHrs += parseTime(row[keys[50]]); // AY
+      grouped[name].progTon += parseFloat(row['AH']) || 0;
+      grouped[name].realTon += parseFloat(row['AI']) || 0;
+      grouped[name].metaHrs += parseTime(row['AX']);
+      grouped[name].realHrs += parseTime(row['AY']);
       grouped[name].count += 1;
     });
 
     return Object.values(grouped).map((g: any) => ({
       ...g,
-      metaHrs: g.metaHrs / g.count, // Promedio de meta
-      realHrs: g.realHrs / g.count, // Promedio de real
+      progTon: Math.round(g.progTon),
+      realTon: Math.round(g.realTon),
+      metaVal: g.metaHrs / g.count,
+      realVal: g.realHrs / g.count,
       metaHrsLabel: formatToTime(g.metaHrs / g.count),
       realHrsLabel: formatToTime(g.realHrs / g.count)
     }));
@@ -120,35 +118,23 @@ export const DashboardEngine: React.FC = () => {
   const sqmData = useMemo(() => processData(SQM_NY_PRODUCTS), [lastReport, startDate, endDate]);
 
   const ProductChart = ({ title, data }: { title: string, data: any[] }) => (
-    <div className="glass-card" style={{ marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.6)' }}>
+    <div className="glass-card" style={{ marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '2rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
         <Package color="var(--accent)" />
         <h3 style={{ margin: 0, fontSize: '1.25rem', letterSpacing: '1px' }}>{title}</h3>
       </div>
       
-      <div style={{ height: '450px', width: '100%' }}>
+      <div style={{ height: '400px', width: '100%' }}>
         <ResponsiveContainer>
           <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-            <XAxis 
-              dataKey="name" 
-              stroke="#94a3b8" 
-              fontSize={10} 
-              interval={0} 
-              angle={-45} 
-              textAnchor="end" 
-              height={80}
-            />
-            <YAxis yAxisId="left" stroke="#94a3b8" fontSize={12} label={{ value: 'Toneladas', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} />
-            <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" fontSize={12} label={{ value: 'Horas', angle: 90, position: 'insideRight', fill: '#94a3b8' }} />
+            <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} interval={0} angle={-45} textAnchor="end" height={80} />
+            <YAxis yAxisId="left" stroke="#94a3b8" fontSize={12} />
+            <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" fontSize={12} />
             
-            <Tooltip 
-              contentStyle={{ background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '12px' }}
-              itemStyle={{ fontSize: '12px' }}
-            />
+            <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '12px' }} />
             <Legend verticalAlign="top" align="right" height={36} />
             
-            {/* Barras Tonelaje */}
             <Bar yAxisId="left" dataKey="progTon" name="Prog. Ton" fill="#4c1d95" radius={[4, 4, 0, 0]}>
               <LabelList dataKey="progTon" position="top" fill="#94a3b8" fontSize={10} />
             </Bar>
@@ -156,11 +142,10 @@ export const DashboardEngine: React.FC = () => {
               <LabelList dataKey="realTon" position="top" fill="#10b981" fontSize={10} />
             </Bar>
 
-            {/* Líneas Tiempos */}
-            <Line yAxisId="right" type="monotone" dataKey="metaHrs" name="Meta Hrs" stroke="#000" strokeWidth={3} dot={{ fill: '#fff', stroke: '#000', r: 4 }}>
-              <LabelList dataKey="metaHrsLabel" position="top" fill="#fff" fontSize={10} offset={10} />
+            <Line yAxisId="right" type="monotone" dataKey="metaVal" name="Meta Hrs" stroke="#ffffff" strokeWidth={3} dot={{ r: 4 }}>
+              <LabelList dataKey="metaHrsLabel" position="top" fill="#ffffff" fontSize={10} offset={10} />
             </Line>
-            <Line yAxisId="right" type="monotone" dataKey="realHrs" name="Real Hrs" stroke="#d97706" strokeWidth={3} dot={{ fill: '#fff', stroke: '#d97706', r: 4 }}>
+            <Line yAxisId="right" type="monotone" dataKey="realVal" name="Real Hrs" stroke="#d97706" strokeWidth={3} dot={{ r: 4 }}>
               <LabelList dataKey="realHrsLabel" position="top" fill="#d97706" fontSize={10} offset={20} />
             </Line>
           </ComposedChart>
@@ -171,48 +156,26 @@ export const DashboardEngine: React.FC = () => {
 
   if (loading) return <div style={{ textAlign: 'center', padding: '5rem' }}><RefreshCcw className="animate-spin" /></div>;
 
-  if (!lastReport) {
-    return (
-      <div className="glass-card" style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
-        <LayoutDashboard size={64} style={{ margin: '0 auto 1rem' }} />
-        <p>No hay reportes publicados. Sube el primer cambio de turno para ver las gráficas.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="animate-in">
-      {/* Header Info */}
-      <div className="glass-card" style={{ marginBottom: '2rem', borderLeft: '4px solid var(--accent)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Reporte Actual: {lastReport.supervisor_name}</h2>
-            <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>{new Date(lastReport.created_at).toLocaleDateString()} - Datos de pestaña "Base de Datos"</p>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {lastReport.image_urls?.map((url: string, i: number) => (
-              <img key={i} src={url} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* Filtros */}
       <div className="glass-card" style={{ marginBottom: '2rem', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
         <Filter size={18} color="var(--accent)" />
-        <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
-        <span style={{ opacity: 0.3 }}>→</span>
-        <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
-        {(startDate || endDate) && <button onClick={() => {setStartDate(''); setEndDate('');}} style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer' }}>Limpiar</button>}
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Desde:</span>
+          <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Hasta:</span>
+          <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </div>
       </div>
 
-      {/* Gráficos por Categoría */}
-      <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />
-      <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />
+      {novandinoData.length > 0 && <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />}
+      {sqmData.length > 0 && <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />}
 
       {novandinoData.length === 0 && sqmData.length === 0 && (
-        <div className="glass-card" style={{ textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
-          <p>No se encontraron datos para los productos especificados en el rango de fechas.</p>
+        <div className="glass-card" style={{ textAlign: 'center', padding: '5rem', opacity: 0.5 }}>
+          <AlertTriangle size={48} style={{ margin: '0 auto 1rem', display: 'block' }} />
+          <p>No se encontraron datos. Asegúrate de que el Excel tenga la pestaña "Base de Datos" y que los productos estén en la columna AF.</p>
         </div>
       )}
     </div>

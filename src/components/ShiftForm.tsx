@@ -42,8 +42,12 @@ export const ShiftForm: React.FC = () => {
       }
       
       const ws = wb.Sheets[wsname];
-      const jsonData = XLSX.utils.sheet_to_json(ws);
-      setExcelData(jsonData);
+      // Usar header: "A" para obtener claves como A, B, C, AF, etc.
+      const jsonData = XLSX.utils.sheet_to_json(ws, { header: "A" });
+      
+      // Filtramos la primera fila si contiene los encabezados (opcional, pero recomendado)
+      const dataWithoutHeader = jsonData.slice(1); 
+      setExcelData(dataWithoutHeader);
     };
     reader.readAsBinaryString(file);
   };

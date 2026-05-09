@@ -11,7 +11,7 @@ export const ShiftForm: React.FC = () => {
   const [success, setSuccess] = useState(false);
 
   // Form states
-  const [supervisor, setSupervisor] = useState('');
+  const [supervisor, setSupervisor] = useState('Turno 39');
   const [observations, setObservations] = useState('');
   const [dateTime, setDateTime] = useState('');
 
@@ -90,7 +90,7 @@ export const ShiftForm: React.FC = () => {
       setImages([]);
       setPreviews([]);
       setExcelData(null);
-      setSupervisor('');
+      setSupervisor('Turno 39');
       setObservations('');
     } catch (err: any) {
       console.error('Error submitting report:', err);
@@ -124,12 +124,12 @@ export const ShiftForm: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-              <User size={14} style={{ marginRight: '4px' }} /> Supervisor Saliente
+              <User size={14} style={{ marginRight: '4px' }} /> Turno saliente
             </label>
             <input 
               type="text" 
               className="input-field" 
-              placeholder="Nombre completo" 
+              placeholder="Ej: Turno 39" 
               value={supervisor}
               onChange={(e) => setSupervisor(e.target.value)}
               required

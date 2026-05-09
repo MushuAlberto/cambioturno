@@ -3,14 +3,14 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   LineChart, Line 
 } from 'recharts';
-import { LayoutDashboard, Clock, MessageSquare, Calendar as CalendarIcon, Filter } from 'lucide-react';
+import { LayoutDashboard, Clock, Filter, AlertTriangle, RefreshCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export const DashboardEngine: React.FC = () => {
   const [lastReport, setLastReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
-  // Filtros de fecha
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -19,37 +19,43 @@ export const DashboardEngine: React.FC = () => {
   }, []);
 
   const fetchLatestReport = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('shift_reports')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error: sbError } = await supabase
+        .from('shift_reports')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(); // Usamos maybeSingle para que no falle si no hay filas
 
-    if (data) {
+      if (sbError) throw sbError;
       setLastReport(data);
+    } catch (err: any) {
+      console.error('Error fetching report:', err);
+      setError(err.message || 'Error al conectar con Supabase');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // Lógica de filtrado de datos del Excel
   const filteredData = useMemo(() => {
-    if (!lastReport?.excel_data) return [];
+    if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
+    
     let data = [...lastReport.excel_data];
 
     if (startDate || endDate) {
       data = data.filter(row => {
-        // Intentar encontrar la columna de fecha (buscamos por nombre común o primera columna)
-        const dateKey = Object.keys(row).find(key => 
-          key.toLowerCase().includes('fecha') || 
-          key.toLowerCase().includes('date') ||
-          !isNaN(Date.parse(row[key]))
-        );
+        const keys = Object.keys(row);
+        // Priorizar Columna B (índice 1) para la fecha
+        const dateKey = keys[1] || keys[0];
 
-        if (!dateKey) return true;
+        if (!row[dateKey]) return false;
 
         const rowDate = new Date(row[dateKey]);
+        if (isNaN(rowDate.getTime())) return true; // Si no es fecha válida, no filtrar
+
         const start = startDate ? new Date(startDate) : null;
         const end = endDate ? new Date(endDate) : null;
 
@@ -65,8 +71,24 @@ export const DashboardEngine: React.FC = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
-        <LayoutDashboard size={64} className="animate-spin" style={{ marginBottom: '1rem' }} />
-        <p>Cargando información desde Supabase...</p>
+        <RefreshCcw size={48} className="animate-spin" style={{ marginBottom: '1rem', margin: '0 auto' }} />
+        <p>Cargando datos operativos...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="glass-card" style={{ textAlign: 'center', padding: '4rem', border: '1px solid #fb7185' }}>
+        <AlertTriangle size={48} color="#fb7185" style={{ marginBottom: '1rem', margin: '0 auto' }} />
+        <h3>Error de Conexión</h3>
+        <p>{error}</p>
+        <p style={{ fontSize: '0.8rem', marginTop: '1rem', opacity: 0.7 }}>
+          Asegúrate de haber configurado las variables VITE_SUPABASE_URL y KEY en Vercel.
+        </p>
+        <button className="btn-primary" style={{ marginTop: '1.5rem' }} onClick={fetchLatestReport}>
+          Reintentar
+        </button>
       </div>
     );
   }
@@ -74,8 +96,9 @@ export const DashboardEngine: React.FC = () => {
   if (!lastReport) {
     return (
       <div className="glass-card" style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
-        <LayoutDashboard size={64} style={{ marginBottom: '1rem' }} />
-        <p>No hay datos publicados. Por favor, sube un cambio de turno con su archivo Excel.</p>
+        <LayoutDashboard size={64} style={{ marginBottom: '1rem', margin: '0 auto' }} />
+        <h3>Esperando Primer Reporte</h3>
+        <p>Aún no se han publicado cambios de turno. El supervisor debe enviar el primer reporte para ver el dashboard.</p>
       </div>
     );
   }
@@ -86,7 +109,7 @@ export const DashboardEngine: React.FC = () => {
       <div className="glass-card" style={{ marginBottom: '2rem', borderLeft: '4px solid var(--accent)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h2 style={{ margin: 0 }}>Reporte: {lastReport.supervisor_name}</h2>
+            <h2 style={{ margin: 0 }}>Último Turno: {lastReport.supervisor_name}</h2>
             <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Clock size={14} /> {new Date(lastReport.created_at).toLocaleString()}
@@ -101,38 +124,27 @@ export const DashboardEngine: React.FC = () => {
             ))}
           </div>
         </div>
-        <p style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem' }}>
+        <p style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', fontStyle: 'italic' }}>
           "{lastReport.observations}"
         </p>
       </div>
 
       {/* Controles de Filtro */}
-      <div className="glass-card" style={{ marginBottom: '2rem', padding: '1.5rem', display: 'flex', gap: '2rem', alignItems: 'center' }}>
+      <div className="glass-card" style={{ marginBottom: '2rem', padding: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Filter size={18} color="var(--accent)" />
-          <span style={{ fontWeight: 600 }}>Filtrar Datos:</span>
+          <span style={{ fontWeight: 600 }}>Rango de Fechas:</span>
         </div>
         
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', opacity: 0.7 }}>Desde:</span>
-            <input type="date" className="input-field" style={{ padding: '0.5rem' }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', opacity: 0.7 }}>Hasta:</span>
-            <input type="date" className="input-field" style={{ padding: '0.5rem' }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          </div>
+          <input type="date" className="input-field" style={{ padding: '0.5rem' }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <span style={{ opacity: 0.5 }}>→</span>
+          <input type="date" className="input-field" style={{ padding: '0.5rem' }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           {(startDate || endDate) && (
-            <button 
-              onClick={() => { setStartDate(''); setEndDate(''); }}
-              style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', fontSize: '0.85rem' }}
-            >
-              Limpiar
+            <button onClick={() => { setStartDate(''); setEndDate(''); }} style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', fontSize: '0.85rem' }}>
+              Limpiar Filtros
             </button>
           )}
-        </div>
-        <div style={{ marginLeft: 'auto', fontSize: '0.85rem', opacity: 0.6 }}>
-          Mostrando {filteredData.length} de {lastReport.excel_data?.length || 0} registros
         </div>
       </div>
 
@@ -145,25 +157,25 @@ export const DashboardEngine: React.FC = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={filteredData.slice(0, 15)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-                  <XAxis dataKey={Object.keys(filteredData[0])[0]} stroke="#718096" fontSize={12} />
-                  <YAxis stroke="#718096" fontSize={12} />
+                  <XAxis dataKey={Object.keys(filteredData[0])[0]} stroke="#718096" fontSize={10} />
+                  <YAxis stroke="#718096" fontSize={10} />
                   <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid var(--glass-border)', borderRadius: '8px' }} />
-                  <Bar dataKey={Object.keys(filteredData[0])[1]} fill="var(--accent)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey={Object.keys(filteredData[0])[1] || Object.keys(filteredData[0])[2]} fill="var(--accent)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           <div className="glass-card" style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Tendencia Histórica</h3>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Tendencia</h3>
             <div style={{ height: '350px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={filteredData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-                  <XAxis dataKey={Object.keys(filteredData[0])[0]} stroke="#718096" fontSize={12} />
-                  <YAxis stroke="#718096" fontSize={12} />
+                  <XAxis dataKey={Object.keys(filteredData[0])[0]} stroke="#718096" fontSize={10} />
+                  <YAxis stroke="#718096" fontSize={10} />
                   <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid var(--glass-border)', borderRadius: '8px' }} />
-                  <Line type="monotone" dataKey={Object.keys(filteredData[0])[1]} stroke="#818cf8" strokeWidth={3} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey={Object.keys(filteredData[0])[1] || Object.keys(filteredData[0])[2]} stroke="#818cf8" strokeWidth={3} dot={{ r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -171,7 +183,7 @@ export const DashboardEngine: React.FC = () => {
         </div>
       ) : (
         <div className="glass-card" style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
-          <p>No hay datos para el rango de fechas seleccionado.</p>
+          <p>No hay datos disponibles para mostrar.</p>
         </div>
       )}
     </div>

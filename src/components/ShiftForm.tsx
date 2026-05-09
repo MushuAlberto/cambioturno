@@ -137,10 +137,10 @@ export const ShiftForm: React.FC = () => {
           </div>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-              <Calendar size={14} style={{ marginRight: '4px' }} /> Fecha y Hora
+              <Calendar size={14} style={{ marginRight: '4px' }} /> Fecha
             </label>
             <input 
-              type="datetime-local" 
+              type="date" 
               className="input-field" 
               value={dateTime}
               onChange={(e) => setDateTime(e.target.value)}

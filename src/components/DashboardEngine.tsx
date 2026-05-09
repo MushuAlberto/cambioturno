@@ -3,7 +3,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Legend, LabelList
 } from 'recharts';
-import { LayoutDashboard, Filter, RefreshCcw, Package, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, Filter, RefreshCcw, Package, AlertCircle, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const NOVANDINO_PRODUCTS = ['BISCHOFITA', 'LSI (S)', 'SAL 27/15', 'SLIT'];
@@ -46,11 +46,11 @@ export const DashboardEngine: React.FC = () => {
     }
   };
 
-  // Limpia strings para comparación (quita guiones, espacios y tildes)
   const normalize = (str: string) => {
-    return str.toLowerCase()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quitar tildes
-      .replace(/[^a-z0-9]/g, ""); // Quitar todo lo que no sea letra o número
+    if (!str) return '';
+    return String(str).toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
   };
 
   const parseSpanishDate = (val: any) => {
@@ -94,15 +94,19 @@ export const DashboardEngine: React.FC = () => {
     const normalizedTargetProducts = products.map(p => normalize(p));
 
     const filtered = lastReport.excel_data.filter((row: any) => {
-      const rawName = String(row['AF'] || '').trim();
-      if (!rawName || rawName.toLowerCase() === 'producto') return false;
+      // Intentar obtener producto por columna AF o por nombre de columna si el reporte es viejo
+      const rawName = row['AF'] || row['Producto'] || row['PRODUCTO'];
+      if (!rawName) return false;
 
       const normName = normalize(rawName);
+      if (normName === 'producto') return false;
+
       const isCorrectProduct = normalizedTargetProducts.includes(normName);
       if (!isCorrectProduct) return false;
 
       if (startDate || endDate) {
-        const rowDate = parseSpanishDate(row['B']);
+        const rawDate = row['B'] || row['Fecha'] || row['FECHA'];
+        const rowDate = parseSpanishDate(rawDate);
         if (!isNaN(rowDate.getTime())) {
           const start = startDate ? new Date(startDate + 'T00:00:00') : null;
           const end = endDate ? new Date(endDate + 'T23:59:59') : null;
@@ -115,40 +119,30 @@ export const DashboardEngine: React.FC = () => {
 
     const grouped: Record<string, any> = {};
     filtered.forEach((row: any) => {
-      // Usamos el nombre que viene en el Excel para mostrarlo en el gráfico
-      const displayName = String(row['AF'] || '').trim().toUpperCase();
-      if (!grouped[displayName]) {
-        grouped[displayName] = { 
-          name: displayName, 
-          progTon: 0, 
-          realTon: 0, 
-          metaHrsTotal: 0, 
-          metaCount: 0,
-          realHrsTotal: 0,
-          realCount: 0
-        };
+      const name = String(row['AF'] || row['Producto'] || row['PRODUCTO']).trim().toUpperCase();
+      if (!grouped[name]) {
+        grouped[name] = { name, progTon: 0, realTon: 0, metaHrsTotal: 0, metaCount: 0, realHrsTotal: 0, realCount: 0 };
       }
       
-      grouped[displayName].progTon += parseFloat(row['AH']) || 0;
-      grouped[displayName].realTon += parseFloat(row['AI']) || 0;
+      grouped[name].progTon += parseFloat(row['AH'] || row['Ton (Prog)'] || 0) || 0;
+      grouped[name].realTon += parseFloat(row['AI'] || row['Ton (Real)'] || 0) || 0;
       
-      const mHrs = parseTime(row['AX']);
+      const mHrs = parseTime(row['AX'] || row['Tiempo Interior Faena Producto (Meta)']);
       if (mHrs !== null) {
-        grouped[displayName].metaHrsTotal += mHrs;
-        grouped[displayName].metaCount += 1;
+        grouped[name].metaHrsTotal += mHrs;
+        grouped[name].metaCount += 1;
       }
       
-      const rHrs = parseTime(row['AY']);
+      const rHrs = parseTime(row['AY'] || row['Tiempo Interior Faena (Real)']);
       if (rHrs !== null) {
-        grouped[displayName].realHrsTotal += rHrs;
-        grouped[displayName].realCount += 1;
+        grouped[name].realHrsTotal += rHrs;
+        grouped[name].realCount += 1;
       }
     });
 
     return Object.values(grouped).map((g: any) => {
       const avgMeta = g.metaCount > 0 ? g.metaHrsTotal / g.metaCount : 0;
       const avgReal = g.realCount > 0 ? g.realHrsTotal / g.realCount : 0;
-      
       return {
         name: g.name,
         progTon: Math.round(g.progTon),
@@ -164,16 +158,25 @@ export const DashboardEngine: React.FC = () => {
   const novandinoData = useMemo(() => processData(NOVANDINO_PRODUCTS), [lastReport, startDate, endDate]);
   const sqmData = useMemo(() => processData(SQM_NY_PRODUCTS), [lastReport, startDate, endDate]);
 
+  // Diagnóstico de productos disponibles en el Excel
+  const availableProducts = useMemo(() => {
+    if (!lastReport?.excel_data || !Array.isArray(lastReport.excel_data)) return [];
+    const set = new Set<string>();
+    lastReport.excel_data.slice(0, 100).forEach((row: any) => {
+      const name = row['AF'] || row['Producto'] || row['PRODUCTO'];
+      if (name && normalize(name) !== 'producto') set.add(String(name).trim());
+    });
+    return Array.from(set);
+  }, [lastReport]);
+
   const ProductChart = ({ title, data }: { title: string, data: any[] }) => {
     if (data.length === 0) return null;
-
     return (
       <div className="glass-card" style={{ marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
           <Package color="var(--accent)" />
           <h3 style={{ margin: 0, fontSize: '1.25rem', letterSpacing: '1px' }}>{title}</h3>
         </div>
-        
         <div style={{ height: '400px', width: '100%' }}>
           <ResponsiveContainer>
             <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
@@ -181,29 +184,12 @@ export const DashboardEngine: React.FC = () => {
               <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} interval={0} angle={-45} textAnchor="end" height={80} />
               <YAxis yAxisId="left" stroke="#94a3b8" fontSize={12} />
               <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" fontSize={12} />
-              
-              <Tooltip 
-                contentStyle={{ background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '12px' }}
-                formatter={(value: any, name: string) => {
-                  if (name.includes('Hrs')) return formatToTime(value);
-                  return value;
-                }}
-              />
+              <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '12px' }} />
               <Legend verticalAlign="top" align="right" height={36} />
-              
-              <Bar yAxisId="left" dataKey="progTon" name="Prog. Ton" fill="#4c1d95" radius={[4, 4, 0, 0]}>
-                <LabelList dataKey="progTon" position="top" fill="#94a3b8" fontSize={10} />
-              </Bar>
-              <Bar yAxisId="left" dataKey="realTon" name="Real Ton" fill="#10b981" radius={[4, 4, 0, 0]}>
-                <LabelList dataKey="realTon" position="top" fill="#10b981" fontSize={10} />
-              </Bar>
-
-              <Line yAxisId="right" type="monotone" dataKey="metaVal" name="Meta Hrs" stroke="#ffffff" strokeWidth={3} dot={{ r: 4 }}>
-                <LabelList dataKey="metaHrsLabel" position="top" fill="#ffffff" fontSize={10} offset={10} />
-              </Line>
-              <Line yAxisId="right" type="monotone" dataKey="realVal" name="Real Hrs" stroke="#d97706" strokeWidth={3} dot={{ r: 4 }}>
-                <LabelList dataKey="realHrsLabel" position="top" fill="#d97706" fontSize={10} offset={20} />
-              </Line>
+              <Bar yAxisId="left" dataKey="progTon" name="Prog. Ton" fill="#4c1d95" radius={[4, 4, 0, 0]}><LabelList dataKey="progTon" position="top" fill="#94a3b8" fontSize={10} /></Bar>
+              <Bar yAxisId="left" dataKey="realTon" name="Real Ton" fill="#10b981" radius={[4, 4, 0, 0]}><LabelList dataKey="realTon" position="top" fill="#10b981" fontSize={10} /></Bar>
+              <Line yAxisId="right" type="monotone" dataKey="metaVal" name="Meta Hrs" stroke="#ffffff" strokeWidth={3} dot={{ r: 4 }}><LabelList dataKey="metaHrsLabel" position="top" fill="#ffffff" fontSize={10} offset={10} /></Line>
+              <Line yAxisId="right" type="monotone" dataKey="realVal" name="Real Hrs" stroke="#d97706" strokeWidth={3} dot={{ r: 4 }}><LabelList dataKey="realHrsLabel" position="top" fill="#d97706" fontSize={10} offset={20} /></Line>
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -216,26 +202,34 @@ export const DashboardEngine: React.FC = () => {
   return (
     <div className="animate-in">
       <div className="glass-card" style={{ marginBottom: '2rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <Filter size={18} color="var(--accent)" />
-          <span style={{ fontWeight: '600' }}>Filtros de Fecha:</span>
-        </div>
+        <Filter size={18} color="var(--accent)" />
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
           <span style={{ opacity: 0.5 }}>al</span>
           <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
-          {(startDate || endDate) && <button onClick={() => {setStartDate(''); setEndDate('');}} style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', fontSize: '0.8rem' }}>Limpiar</button>}
         </div>
       </div>
 
       <ProductChart title="PRODUCTOS NOVANDINO" data={novandinoData} />
       <ProductChart title="PRODUCTOS SQM N.Y." data={sqmData} />
 
-      {novandinoData.length === 0 && sqmData.length === 0 && (
-        <div className="glass-card" style={{ textAlign: 'center', padding: '5rem', opacity: 0.5 }}>
-          <AlertCircle size={48} style={{ margin: '0 auto 1rem', display: 'block' }} />
-          <p>No se encontraron datos para los productos seleccionados en estas fechas.</p>
-          <p style={{ fontSize: '0.8rem' }}>Hemos activado el filtro flexible para ignorar guiones y espacios. Prueba subiendo el archivo de nuevo.</p>
+      {(novandinoData.length === 0 && sqmData.length === 0) && (
+        <div className="glass-card" style={{ padding: '3rem', textAlign: 'center' }}>
+          <AlertCircle size={48} style={{ margin: '0 auto 1rem', display: 'block', color: '#fb7185' }} />
+          <h3>No hay datos para mostrar</h3>
+          <p style={{ opacity: 0.7, marginBottom: '2rem' }}>No se encontraron coincidencias para los productos en el rango seleccionado.</p>
+          
+          <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '12px', textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--accent)' }}>
+              <Search size={16} />
+              <span style={{ fontWeight: '600' }}>Diagnóstico: Productos encontrados en el Excel</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {availableProducts.length > 0 ? availableProducts.map((p, i) => (
+                <span key={i} style={{ background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem' }}>{p}</span>
+              )) : <p style={{ fontSize: '0.8rem', opacity: 0.5 }}>No se detectaron nombres de productos en la columna AF.</p>}
+            </div>
+          </div>
         </div>
       )}
     </div>

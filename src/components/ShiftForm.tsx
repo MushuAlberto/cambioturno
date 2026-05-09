@@ -128,6 +128,8 @@ export const ShiftForm: React.FC = () => {
   const novandinoLive = useMemo(() => processLiveCharts(NOVANDINO_PRODUCTS), [excelData, chartStartDate, chartEndDate]);
   const sqmLive = useMemo(() => processLiveCharts(SQM_NY_PRODUCTS), [excelData, chartStartDate, chartEndDate]);
 
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const handleSubmit = async () => {
     setLoading(true);
     try {
@@ -172,16 +174,36 @@ export const ShiftForm: React.FC = () => {
 
   return (
     <div className="animate-in">
-      {step === 1 ? (
-        <div className="glass-card">
-          <div style={{ marginBottom: '2rem' }}>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <FileSpreadsheet className="text-accent" /> Paso 1: Configurar Datos
+      {/* Botón para abrir configuración si estamos en el paso 2 o si queremos cambiar algo */}
+      <button 
+        className="btn-primary" 
+        style={{ 
+          position: 'fixed', 
+          left: '20px', 
+          bottom: '20px', 
+          zIndex: 100, 
+          borderRadius: '50%', 
+          width: '60px', 
+          height: '60px', 
+          justifyContent: 'center',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+        }}
+        onClick={() => setIsSidebarOpen(true)}
+      >
+        <FileSpreadsheet size={24} />
+      </button>
+
+      {/* Sidebar Oculto (Paso 1) */}
+      <div className={`sidebar-overlay ${isSidebarOpen ? 'active' : ''}`} onClick={() => setIsSidebarOpen(false)}>
+        <div className={`sidebar-content ${isSidebarOpen ? 'active' : ''}`} onClick={e => e.stopPropagation()}>
+          <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <FileSpreadsheet className="text-accent" /> Configurar Datos
             </h2>
-            <p style={{ opacity: 0.7 }}>Carga el archivo y define el rango para los gráficos.</p>
+            <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', opacity: 0.5 }}>✕</button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div>
               <label className="label-text"><User size={14} /> Turno Saliente</label>
               <input type="text" className="input-field" value={supervisor} onChange={e => setSupervisor(e.target.value)} />
@@ -190,28 +212,48 @@ export const ShiftForm: React.FC = () => {
               <label className="label-text"><Calendar size={14} /> Fecha del Turno</label>
               <input type="date" className="input-field" value={shiftDate} onChange={e => setShiftDate(e.target.value)} />
             </div>
-          </div>
 
-          <div style={{ marginBottom: '2rem' }}>
-            <label className="label-text"><FileSpreadsheet size={14} /> Archivo Excel (.xlsm)</label>
-            <div className={`dropzone ${excelData ? 'active' : ''}`} onClick={() => document.getElementById('excel-input')?.click()}>
-              <FileSpreadsheet size={32} style={{ opacity: 0.5, color: excelData ? '#34d399' : 'inherit' }} />
-              <p>{excelData ? 'Archivo Cargado ✓' : 'Seleccionar archivo de red'}</p>
-              <input id="excel-input" type="file" hidden onChange={handleExcelChange} />
+            <div>
+              <label className="label-text"><FileSpreadsheet size={14} /> Archivo Excel (.xlsm)</label>
+              <div className={`dropzone ${excelData ? 'active' : ''}`} onClick={() => document.getElementById('sidebar-excel')?.click()}>
+                <FileSpreadsheet size={24} style={{ opacity: 0.5, color: excelData ? '#34d399' : 'inherit' }} />
+                <p style={{ fontSize: '0.8rem' }}>{excelData ? 'Archivo Cargado ✓' : 'Seleccionar archivo'}</p>
+                <input id="sidebar-excel" type="file" hidden onChange={handleExcelChange} />
+              </div>
             </div>
-          </div>
 
-          <div style={{ marginBottom: '2.5rem' }}>
-            <label className="label-text"><BarChart3 size={14} /> Rango de Fechas para los Gráficos</label>
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <input type="date" className="input-field" value={chartStartDate} onChange={e => setChartStartDate(e.target.value)} />
-              <span style={{ opacity: 0.5 }}>al</span>
-              <input type="date" className="input-field" value={chartEndDate} onChange={e => setChartEndDate(e.target.value)} />
+            <div>
+              <label className="label-text"><BarChart3 size={14} /> Rango para Gráficos</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <input type="date" className="input-field" value={chartStartDate} onChange={e => setChartStartDate(e.target.value)} />
+                <input type="date" className="input-field" value={chartEndDate} onChange={e => setChartEndDate(e.target.value)} />
+              </div>
             </div>
-          </div>
 
-          <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => excelData ? setStep(2) : alert('Primero carga un archivo Excel')}>
-            Continuar <ChevronRight size={18} />
+            <button 
+              className="btn-primary" 
+              style={{ marginTop: '1rem', justifyContent: 'center' }} 
+              onClick={() => {
+                if (!excelData) alert('Carga un Excel primero');
+                else {
+                  setIsSidebarOpen(false);
+                  setStep(2);
+                }
+              }}
+            >
+              Cargar y Continuar <ChevronRight size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {step === 1 ? (
+        <div className="glass-card" style={{ textAlign: 'center', padding: '5rem', opacity: 0.5 }}>
+          <FileSpreadsheet size={64} style={{ margin: '0 auto 1.5rem', display: 'block' }} />
+          <h3>Bienvenido al Cambio de Turno</h3>
+          <p>Presiona el botón verde de la izquierda para configurar los datos del turno.</p>
+          <button className="btn-primary" style={{ margin: '2rem auto 0' }} onClick={() => setIsSidebarOpen(true)}>
+            Configurar Datos <ChevronRight size={18} />
           </button>
         </div>
       ) : (
